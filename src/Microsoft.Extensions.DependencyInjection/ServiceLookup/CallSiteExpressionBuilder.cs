@@ -3,13 +3,324 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
+using Microsoft.AspNetCore.Razor.Language.CodeGeneration;
 
 namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
 {
+    public abstract class GeneratedServiceProvierBase: IServiceProvider, IServiceScopeFactory
+    {
+        public abstract object GetService(Type serviceType);
+
+        protected List<object> Disposables = new List<object>();
+
+        protected IServiceScopeFactory ScopeFactory => this;
+
+        public abstract IServiceScope CreateScope();
+    }
+
+    public static class PrecompiledServiceProviderExtensions
+    {
+        public static IServiceProvider BuildPrecompiledServiceProvider(this IServiceCollection serviceCollection)
+        {
+            SourceCodeBuilder builder = new SourceCodeBuilder();
+            File.WriteAllText("d:\\DI.cs", builder.Generate(serviceCollection));
+
+            return serviceCollection.BuildServiceProvider();
+        }
+    }
+
+    internal class SourceCodeBuilder : CallSiteVisitor<CodeWriter, string>
+    {
+
+        private int i = 0;
+
+        private string VarName()
+        {
+            return "s_" + (i++);
+        }
+
+        protected override string VisitTransient(TransientCallSite transientCallSite, CodeWriter argument)
+        {
+            var name = VarName();
+            argument.WriteVariableDeclaration("var", name,
+                VisitCallSite(transientCallSite.ServiceCallSite, argument));
+            argument.WriteLine($"if ({name} is IDisposable)");
+            using (argument.BuildScope())
+            {
+                argument.WriteLine($"lock (Disposables) Disposables.Add({name});");
+            }
+
+            return name;
+        }
+
+        protected override string VisitConstructor(ConstructorCallSite constructorCallSite, CodeWriter argument)
+        {
+            return $"new {FormatTypeName(constructorCallSite.ImplementationType)}({string.Join(", \r\n", constructorCallSite.ParameterCallSites.Select(c => VisitCallSite(c, argument)))})";
+        }
+
+        protected override string VisitSingleton(SingletonCallSite singletonCallSite, CodeWriter argument)
+        {
+            return VisitCallSite(singletonCallSite.ServiceCallSite, argument);
+        }
+
+        protected override string VisitScoped(ScopedCallSite scopedCallSite, CodeWriter argument)
+        {
+            return VisitCallSite(scopedCallSite.ServiceCallSite, argument);
+        }
+
+        protected override string VisitConstant(ConstantCallSite constantCallSite, CodeWriter argument)
+        {
+            return $"Contants_" + GenerateId(constantCallSite.ServiceType);
+        }
+
+        private string GenerateId(Type serviceType)
+        {
+            return Regex.Replace(FormatTypeName(serviceType), "[^a-zA-Z0-9]", "_");
+        }
+
+        protected override string VisitCreateInstance(CreateInstanceCallSite createInstanceCallSite, CodeWriter argument)
+        {
+            if (createInstanceCallSite.ImplementationType.IsPublic)
+            {
+                return $"new {FormatTypeName(createInstanceCallSite.ImplementationType)}()";
+            }
+            else
+            {
+                return $"Activator.CreateInstance<{FormatTypeName(createInstanceCallSite.ImplementationType)}>()";
+            }
+        }
+
+        protected override string VisitServiceProvider(ServiceProviderCallSite serviceProviderCallSite, CodeWriter argument)
+        {
+            return "this.ServiceProvider";
+        }
+
+        protected override string VisitServiceScopeFactory(ServiceScopeFactoryCallSite serviceScopeFactoryCallSite, CodeWriter argument)
+        {
+            return "this.ScopeFactory";
+        }
+
+        protected override string VisitIEnumerable(IEnumerableCallSite enumerableCallSite, CodeWriter argument)
+        {
+            var l = new List<string>();
+            foreach (var serviceCallSite in enumerableCallSite.ServiceCallSites)
+            {
+                l.Add(VisitCallSite(serviceCallSite, argument));
+            }
+
+            var varName = VarName();
+            argument
+                .Write("var ")
+                .Write(varName)
+                .Write(" = new ")
+                .Write(FormatTypeName(enumerableCallSite.ItemType))
+                .Write(" []");
+            if (enumerableCallSite.ServiceCallSites.Any())
+            {
+                using (argument.BuildScope())
+                {
+                    foreach (var ll in l)
+                    {
+                        argument
+                            .Write(ll)
+                            .WriteLine(",");
+                    }
+                }
+                argument.WriteLine(";");
+            }
+            else
+            {
+                argument.WriteLine(" {};");
+            }
+            return varName;
+        }
+
+        protected override string VisitFactory(FactoryCallSite factoryCallSite, CodeWriter argument)
+        {
+            return $"Factory_" + GenerateId(factoryCallSite.ServiceType) + "(this.ServiceProvider)";
+        }
+
+        public string Generate(IEnumerable<ServiceDescriptor> descriptors)
+        {
+            var factory = new CallSiteFactory(descriptors, false);
+            var writer = new CodeWriter();
+            var allCallSites = descriptors.Where(d => !d.ServiceType.IsGenericTypeDefinition)
+                .Select(descriptor =>
+                    (Descriptor: descriptor,
+                     CallSite: factory.CreateCallSite(descriptor.ServiceType, new HashSet<Type>())));
+
+            writer.WriteUsing("System");
+            writer.WriteUsing("Microsoft.Extensions.DependencyModel");
+
+            using (writer.BuildClassDeclaration(
+                new[] { "public" },
+                "GeneratedServiceProvider",
+                "GeneratedServiceProviderBase",
+                new [] { "IServiceProvider" }))
+            {
+                GenerateFields(allCallSites, writer);
+
+                GenerateInitialization(allCallSites, writer);
+
+                GenerateMethods(allCallSites, writer);
+
+                GenerateGetService(allCallSites, writer);
+
+            }
+            return writer.GenerateCode();
+        }
+
+        private void GenerateGetService(IEnumerable<(ServiceDescriptor Descriptor, IServiceCallSite CallSite)> allCallSites, CodeWriter writer)
+        {
+            using (writer.BuildMethodDeclaration(
+                "public",
+                "object",
+                "GetService",
+                new[]
+                {
+                    new KeyValuePair<string, string>("Type", "type")
+                }))
+            {
+                foreach (var calSite in allCallSites)
+                {
+                    writer.Write("if (");
+                    WriteMatchType(writer, "type", calSite.CallSite.ServiceType);
+                    writer.WriteLine(")");
+
+                    using (writer.BuildScope())
+                    {
+                        writer.Write("return ")
+                              .WriteMethodInvocation(GenerateId(calSite.CallSite.ServiceType));
+                    }
+                }
+            }
+        }
+
+        private void GenerateMethods(IEnumerable<(ServiceDescriptor Descriptor, IServiceCallSite CallSite)> allCallSites, CodeWriter writer)
+        {
+            foreach (var callSite in allCallSites)
+            {
+                using (writer.BuildMethodDeclaration(
+                    "private",
+                    "object",
+                    GenerateId(callSite.CallSite.ServiceType),
+                    Enumerable.Empty<KeyValuePair<string, string>>()))
+                {
+                    var expression = VisitCallSite(callSite.CallSite, writer);
+                    writer.Write("return ")
+                          .Write(expression)
+                          .WriteLine(";");
+                }
+            }
+        }
+
+        private void GenerateInitialization(IEnumerable<(ServiceDescriptor Descriptor, IServiceCallSite CallSite)> allCallSites, CodeWriter writer)
+        {
+            using (writer.BuildMethodDeclaration("public", "void", "Initialize", new[]
+            {
+                new KeyValuePair<string, string>("IEnumerable<ServiceDescriptor>", "descriptors")
+            }))
+            {
+                writer.WriteLine("foreach (var descriptor in descriptors)");
+                using (writer.BuildScope())
+                {
+                    foreach (var calSite in allCallSites)
+                    {
+                        var service = calSite.Descriptor;
+                        if (service.ImplementationFactory == null &&
+                            service.ImplementationInstance == null)
+                        {
+                            continue;
+                        }
+
+                        writer.Write("if (");
+                        WriteMatchType(writer, "descriptor.ServiceType", calSite.CallSite.ServiceType);
+                        writer.WriteLine(")");
+
+                        using (writer.BuildScope())
+                        {
+                            if (service.ImplementationFactory != null)
+                            {
+                                string factoryName = "Factory_" + GenerateId(service.ServiceType);
+                                writer.WriteStartAssignment(factoryName)
+                                    .Write("descriptor.ImplementationFactory")
+                                    .Write(";");
+                            }
+                            else if (service.ImplementationInstance != null)
+                            {
+                                var constantName = "Contants_" + GenerateId(service.ServiceType);
+                                writer.WriteStartAssignment(constantName);
+                                if (service.ServiceType.IsPublic)
+                                {
+                                    writer.Write("(")
+                                        .Write(FormatTypeName(service.ServiceType))
+                                        .Write(") ");
+                                }
+
+                                writer.Write("descriptor.ImplementationInstance;");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private void GenerateFields(IEnumerable<(ServiceDescriptor Descriptor, IServiceCallSite CallSite)> allCallSites, CodeWriter writer)
+        {
+            foreach (var calSite in allCallSites)
+            {
+                var service = calSite.Descriptor;
+                if (service.ImplementationFactory != null)
+                {
+                    string factoryName = "Factory_" + GenerateId(service.ServiceType);
+                    writer.WriteField(new[] { "private" }, "Func<IServiceProvider, object>", factoryName);
+                }
+                else if (service.ImplementationInstance != null)
+                {
+                    var constantName = "Contants_" + GenerateId(service.ServiceType);
+                    writer.WriteField(new[] { "private" }, FormatTypeName(service.ServiceType), constantName);
+                }
+            }
+        }
+
+        public void WriteMatchType(CodeWriter writer, string prop, Type type)
+        {
+            writer.Write(prop);
+
+            if (type.IsPublic)
+            {
+                writer.Write(" == typeof(")
+                      .Write(FormatTypeName(type))
+                      .Write(")");
+            }
+            else
+            {
+                writer.Write(".FullName == ")
+                      .WriteStringLiteral(FormatTypeName(type));
+            }
+        }
+
+        private string FormatTypeName(Type type)
+        {
+            if (type.IsGenericType)
+            {
+
+                var typeDefeninition = type.FullName;
+                var unmangledName = typeDefeninition.Substring(0, typeDefeninition.IndexOf("`", StringComparison.Ordinal));
+                return unmangledName + "<" + string.Join(",", type.GetGenericArguments().Select(FormatTypeName) ) + ">";
+            }
+
+            return type.FullName;
+        }
+    }
+
     internal class CallSiteExpressionBuilder : CallSiteVisitor<ParameterExpression, Expression>
     {
         private static readonly MethodInfo CaptureDisposableMethodInfo = GetMethodInfo<Func<ServiceProvider, object, object>>((a, b) => a.CaptureDisposable(b));

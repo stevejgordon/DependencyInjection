@@ -12,13 +12,19 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
 {
     internal class CallSiteFactory
     {
+        private readonly bool _mergeCallSites;
         private readonly List<ServiceDescriptor> _descriptors;
         private readonly Dictionary<Type, IServiceCallSite> _callSiteCache = new Dictionary<Type, IServiceCallSite>();
         private readonly Dictionary<Type, ServiceDescriptorCacheItem> _descriptorLookup = new Dictionary<Type, ServiceDescriptorCacheItem>();
 
-        public CallSiteFactory(IEnumerable<ServiceDescriptor> descriptors)
+        public CallSiteFactory(IEnumerable<ServiceDescriptor> descriptors, bool mergeCallSites = true)
         {
+            _mergeCallSites = mergeCallSites;
             _descriptors = descriptors.ToList();
+
+            Add(typeof(IServiceProvider), new ServiceProviderCallSite());
+            Add(typeof(IServiceScopeFactory), new ServiceScopeFactoryCallSite());
+
             Populate(descriptors);
         }
 
@@ -357,7 +363,7 @@ namespace Microsoft.Extensions.DependencyInjection.ServiceLookup
         }
 
 
-        public void Add(Type type, IServiceCallSite serviceCallSite)
+        private void Add(Type type, IServiceCallSite serviceCallSite)
         {
             _callSiteCache[type] = serviceCallSite;
         }
