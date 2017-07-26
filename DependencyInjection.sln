@@ -1,6 +1,6 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-VisualStudioVersion = 15.0.26510.0
+VisualStudioVersion = 15.0.26724.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{D26F6F80-63EE-4081-A814-EF3DBABE24D9}"
 EndProject
@@ -28,6 +28,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "build", "build", "{483CFA4B
 		build\dependencies.props = build\dependencies.props
 		build\repo.props = build\repo.props
 	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{8C5870A2-2E40-4464-8398-E06BBD0FCB3F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleApp", "samples\SampleApp\SampleApp.csproj", "{63615FFA-216B-448F-B955-C4834A5045E1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -95,6 +99,18 @@ Global
 		{2AB56E17-8ADC-4763-B298-79BFECC351A8}.Release|Mixed Platforms.Build.0 = Release|Any CPU
 		{2AB56E17-8ADC-4763-B298-79BFECC351A8}.Release|x86.ActiveCfg = Release|Any CPU
 		{2AB56E17-8ADC-4763-B298-79BFECC351A8}.Release|x86.Build.0 = Release|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Debug|Mixed Platforms.ActiveCfg = Debug|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Debug|Mixed Platforms.Build.0 = Debug|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Debug|x86.Build.0 = Debug|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Release|Mixed Platforms.ActiveCfg = Release|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Release|Mixed Platforms.Build.0 = Release|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Release|x86.ActiveCfg = Release|Any CPU
+		{63615FFA-216B-448F-B955-C4834A5045E1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -106,5 +122,9 @@ Global
 		{B9395B0F-E8E3-4913-BABF-E71A76F21231} = {D26F6F80-63EE-4081-A814-EF3DBABE24D9}
 		{2AB56E17-8ADC-4763-B298-79BFECC351A8} = {88B347C1-CCEC-4827-9564-FFF07C9BF7C7}
 		{483CFA4B-18DB-404D-BCA0-E39E6734733F} = {39447DAF-CDD6-456F-B473-1E9A9D21ADF5}
+		{63615FFA-216B-448F-B955-C4834A5045E1} = {8C5870A2-2E40-4464-8398-E06BBD0FCB3F}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F5E96F2A-6DAD-4F82-9B95-E052873AFAB1}
 	EndGlobalSection
 EndGlobal

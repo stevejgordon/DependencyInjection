@@ -20,6 +20,7 @@ namespace Microsoft.Extensions.DependencyInjection
         private static readonly CallSiteRuntimeResolver _callSiteRuntimeResolver = new CallSiteRuntimeResolver();
         private static readonly Func<Type, ServiceProvider, Func<ServiceProvider, object>> _createServiceAccessor = CreateServiceAccessor;
 
+        private readonly ServiceProviderOptions _options;
         private readonly CallSiteValidator _callSiteValidator;
         private bool _disposeCalled;
         private List<IDisposable> _disposables;
@@ -29,16 +30,27 @@ namespace Microsoft.Extensions.DependencyInjection
 
         internal ServiceProvider Root { get; }
         internal CallSiteFactory CallSiteFactory { get; }
+        internal CallSiteExpressionBuilder CallSiteExpressionBuilder  { get; }
         internal Dictionary<object, object> ResolvedServices { get; }
         internal ConcurrentDictionary<Type, Func<ServiceProvider, object>> RealizedServices { get; } = new ConcurrentDictionary<Type, Func<ServiceProvider, object>>();
 
         internal ServiceProvider(IEnumerable<ServiceDescriptor> serviceDescriptors, ServiceProviderOptions options)
         {
+            _options = options;
             Root = this;
 
             if (options.ValidateScopes)
             {
                 _callSiteValidator = new CallSiteValidator();
+            }
+
+            if (options.InjectDiagnosticFrames)
+            {
+                CallSiteExpressionBuilder = new DiagnosticCallSiteExpressionBuilder(_callSiteRuntimeResolver);
+            }
+            else
+            {
+                CallSiteExpressionBuilder = new CallSiteExpressionBuilder(_callSiteRuntimeResolver);
             }
 
             CallSiteFactory = new CallSiteFactory(serviceDescriptors);
@@ -56,6 +68,7 @@ namespace Microsoft.Extensions.DependencyInjection
             CallSiteFactory = parent.CallSiteFactory;
             RealizedServices = parent.RealizedServices;
             _callSiteValidator = parent._callSiteValidator;
+            _options = parent._options;
         }
 
         /// <summary>
@@ -93,8 +106,7 @@ namespace Microsoft.Extensions.DependencyInjection
                 {
                     Task.Run(() =>
                     {
-                        var realizedService = new CallSiteExpressionBuilder(_callSiteRuntimeResolver)
-                            .Build(callSite);
+                        var realizedService = provider.CallSiteExpressionBuilder.Build(callSite);
                         provider.RealizedServices[serviceType] = realizedService;
                     });
                 }
@@ -149,6 +161,17 @@ namespace Microsoft.Extensions.DependencyInjection
                 }
             }
             return service;
+        }
+
+        // Noop methods to use as diagnostic stack frames
+        internal static object Resolve<T>(Func<ServiceProvider, object> action, ServiceProvider provider)
+        {
+            return action(provider);
+        }
+
+        internal static object Create<T>(Func<ServiceProvider, object> action, ServiceProvider provider)
+        {
+            return action(provider);
         }
     }
 }
