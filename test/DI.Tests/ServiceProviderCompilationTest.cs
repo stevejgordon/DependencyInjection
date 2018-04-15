@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
@@ -53,6 +54,48 @@ namespace Microsoft.Extensions.DependencyInjection.Tests
             thread.Start();
             thread.Join();
             await tsc.Task;
+        }
+
+        [Theory]
+        [InlineData(ServiceProviderMode.Dynamic)]
+        [InlineData(ServiceProviderMode.Runtime)]
+        [InlineData(ServiceProviderMode.ILEmit)]
+        [InlineData(ServiceProviderMode.Expressions)]
+        private void CompilesWideServiceTree(ServiceProviderMode mode)
+        {
+            var serviceCollection = new ServiceCollection();
+            for (int i = 0; i < 16; i++)
+            {
+                serviceCollection.AddScoped(typeof(MultiService<>));
+            }
+
+            serviceCollection.AddScoped<Service>();
+            serviceCollection.AddScoped(typeof(Multiple<>));
+
+            var serviceProvider = serviceCollection.BuildServiceProvider(new ServiceProviderOptions { Mode = mode });
+            for (int i = 0; i < 10; i++)
+            {
+                var service = serviceProvider.GetService<Multiple<Multiple<Multiple<Service>>>>();
+                Assert.NotNull(service);
+            }
+        }
+
+        private class Service
+        {
+        }
+
+        private class MultiService<T>
+        {
+            public MultiService(T service)
+            {
+            }
+        }
+
+        private class Multiple<T>
+        {
+            public Multiple(IEnumerable<MultiService<T>> multiService)
+            {
+            }
         }
     }
 }
